@@ -1,0 +1,109 @@
+@import url('https://fonts.googleapis.com/css2?family=Zalando+Sans+Expanded:ital,wght@0,200..900;1,200..900&display=swap');
+
+.main-container{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  width: 100%;
+}
+
+.producer-component{
+  width: 100%;
+  height: 150px;
+  background-color: rgb(24, 24, 24);
+  border: 1px solid #232424;
+  border-radius: 4px;
+  font-family: "Zalando Sans Expanded", sans-serif;
+  font-optical-sizing: auto;
+  color: azure;
+  font-weight: 600;
+  font-style: normal;
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+}
+
+.consumer-group{
+  display: flex;
+  gap: 24px;
+  width: 100%;
+}
+
+.individual-consumer-component{
+  background-color: rgb(24, 24, 24);
+  border: 1px solid #232424;
+  border-radius: 4px;
+  width: 100%;
+  height: 340px;
+  font-family: "Zalando Sans Expanded", sans-serif;
+  font-optical-sizing: auto;
+  color: azure;
+  font-weight: 600;
+  font-style: normal;
+  padding: 16px;
+  transition: box-shadow 0.4s ease, border-color 0.4s ease;
+}
+
+.individual-consumer-component:hover {
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.6);
+  border-color: rgba(255, 255, 255, 0.7);
+}
+
+.consumer-chart-area{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+
+
+
+.health-check-component{
+  font-family: "Zalando Sans Expanded", sans-serif;
+  font-optical-sizing: auto;
+  color: azure;
+  font-weight: 400;
+  font-style: normal;
+  font-size: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px;
+}
+
+
+/* HEALTH CHECK CSS */
+.health-check-pass{
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: rgb(67, 248, 27);
+    box-shadow: 0 0 12px rgba(137, 245, 97, 0.6);
+}
+
+.health-check-fail{
+width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: rgb(232, 14, 14);
+    box-shadow: 0 0 12px rgba(232, 72, 72, 0.6);
+}
+
+
+
+/* BUTTONS  */
+
+.custom-button{
+  width: min-content;
+  padding: 8px 24px;
+  border: 1px solid #232424;
+  border-radius: 12px;
+  transition: box-shadow 0.4s ease, border-color 0.4s ease;
+  cursor: pointer;
+  max-height: max-content;
+}
+
+.custom-button:hover{
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.6);
+  border-color: rgba(255, 255, 255, 0.7)
+}
