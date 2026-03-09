@@ -1,35 +1,211 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unused-vars */
-// import { useState } from "react";
-
 import { Box } from "@mui/material";
 import "./App.css";
 import { LineChart } from "@mui/x-charts";
 import { axisClasses } from "@mui/x-charts/ChartsAxis";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import HealthCheckBox from "./producer/HealthCheckBox";
 
+const AGGREGATOR_URL = "http://localhost:3000";
+const BROKER_URL = "http://localhost:8080";
+const PRODUCER_URL = "http://localhost:8084";
+
+// Map consumer names to their SSE keys
+const CONSUMER_KEYS: Record<string, string> = {
+  Orders: "orders-service",
+  Notifications: "notifications-service",
+  "Data Analytics": "analytics-service",
+};
+
+// Shared SSE data type
+type PartitionMetric = {
+  partition: number;
+  offset: number;
+  eventsConsumed: number;
+};
+
+type ConsumerMetric = {
+  consumerName: string;
+  totalEventsConsumed: number;
+  partitions: PartitionMetric[];
+  error?: string;
+};
+
+type SSEPayload = {
+  timestamp: number;
+  consumers: Record<string, ConsumerMetric>;
+};
+
 function App() {
+  const [sseData, setSseData] = useState<SSEPayload | null>(null);
+  const [partitions, setPartitions] = useState<number>(3);
+
+  const [eventsPerSecond, setEventsPerSecond] = useState<number>(100);
+  const [duration, setDuration] = useState<number>(60);
+  const [isRunning, setIsRunning] = useState<boolean>(false);
+
+  // Connect to SSE stream once on mount
+  useEffect(() => {
+    const es = new EventSource(`${AGGREGATOR_URL}/stream`);
+    es.onmessage = (e) => {
+      const data: SSEPayload = JSON.parse(e.data);
+      setSseData(data);
+    };
+    es.onerror = () => console.error("SSE connection error");
+    return () => es.close();
+  }, []);
+
+  const handleStart = async () => {
+    console.log("Starting with:", { eventsPerSecond, duration, partitions });
+
+    // Remove the broker config call from here
+    // Partition config should only be set when partition count changes via +/-
+
+    await fetch(`${PRODUCER_URL}/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventsPerSecond, durationSeconds: duration }),
+    });
+
+    setIsRunning(true);
+    setTimeout(() => setIsRunning(false), duration * 1000);
+  };
+
+  const handleStop = async () => {
+    await fetch(`${PRODUCER_URL}/stop`, { method: "POST" });
+    setIsRunning(false);
+  };
+
+  const handleReset = async () => {
+    await fetch(`${PRODUCER_URL}/stop`, { method: "POST" });
+  };
+
+  const handleAddPartition = async () => {
+    const next = Math.min(partitions + 1, 5);
+    setPartitions(next);
+    await fetch(`${BROKER_URL}/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ partitionCount: next }),
+    });
+  };
+
+  const handleRemovePartition = async () => {
+    const next = Math.max(partitions - 1, 1);
+    setPartitions(next);
+    await fetch(`${BROKER_URL}/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ partitionCount: next }),
+    });
+  };
+
+  // Derive health check from SSE data
+  const healthChecks = [
+    { component: "PAYMENTS-SERVICE-PRODUCER", healthCheck: sseData !== null },
+    {
+      component: "MINI-KAFKA-BROKER",
+      healthCheck:
+        sseData !== null &&
+        Object.values(sseData.consumers).some((c) => !c.error),
+    },
+    {
+      component: "ORDERS-SERVICE-CONSUMER",
+      healthCheck: !sseData?.consumers["orders-service"]?.error,
+    },
+    {
+      component: "NOTIFICATIONS-SERVICE-CONSUMER",
+      healthCheck: !sseData?.consumers["notifications-service"]?.error,
+    },
+    {
+      component: "ANALYTICS-SERVICE-CONSUMER",
+      healthCheck: !sseData?.consumers["analytics-service"]?.error,
+    },
+    {
+      component: "EVENTS-AGGREGATOR-SERVICE",
+      healthCheck: sseData !== null,
+    },
+  ];
+
   return (
     <Box className="main-container">
       <Box className="producer-component">
-        <HealthCheckBox />
+        <HealthCheckBox componentsList={healthChecks} />
         <Box
           sx={{
             display: "flex",
-            gap: "24px",
+            gap: "8px",
+            alignItems: "center",
+            color: "azure",
+            fontSize: "12px",
           }}
         >
-          <CustomButton buttonName="Start" onClick={() => {}} />
-          <CustomButton buttonName="Stop" onClick={() => {}} />
-          <CustomButton buttonName="Reset" onClick={() => {}} />
+          <span>EPS:</span>
+          <input
+            type="number"
+            value={eventsPerSecond}
+            min={10}
+            max={1700}
+            disabled={isRunning}
+            onChange={(e) => setEventsPerSecond(Number(e.target.value))}
+            style={{
+              width: "60px",
+              background: "#1e1e1e",
+              color: "white",
+              border: "1px solid #333",
+              borderRadius: "4px",
+              padding: "4px",
+            }}
+          />
+          <span>Duration (s):</span>
+          <input
+            type="number"
+            value={duration}
+            min={10}
+            max={60}
+            disabled={isRunning}
+            onChange={(e) => setDuration(Number(e.target.value))}
+            style={{
+              width: "60px",
+              background: "#1e1e1e",
+              color: "white",
+              border: "1px solid #333",
+              borderRadius: "4px",
+              padding: "4px",
+            }}
+          />
         </Box>
-        <ProducerConfig />
+        <Box sx={{ display: "flex", gap: "24px" }}>
+          <CustomButton
+            buttonName="Start"
+            onClick={handleStart}
+            disabled={isRunning}
+          />
+          <CustomButton
+            buttonName="Stop"
+            onClick={handleStop}
+            disabled={isRunning}
+          />
+          <CustomButton
+            buttonName="Reset"
+            onClick={handleReset}
+            disabled={isRunning}
+          />
+        </Box>
+        <ProducerConfig
+          partitions={partitions}
+          onAdd={handleAddPartition}
+          onRemove={handleRemovePartition}
+        />
       </Box>
       <Box className="consumer-group">
-        <IndividualConsumerComponent consumerName="Orders" />
-        <IndividualConsumerComponent consumerName="Notifications" />
-        <IndividualConsumerComponent consumerName="Data Anaytics" />
+        {["Orders", "Notifications", "Data Analytics"].map((name) => (
+          <IndividualConsumerComponent
+            key={name}
+            consumerName={name}
+            metrics={sseData?.consumers[CONSUMER_KEYS[name]] ?? null}
+          />
+        ))}
       </Box>
     </Box>
   );
@@ -37,128 +213,140 @@ function App() {
 
 export default App;
 
+// ---
+
 const IndividualConsumerComponent = ({
   consumerName,
+  metrics,
 }: {
   consumerName: string;
+  metrics: ConsumerMetric | null;
 }) => {
-  const [uData, setUData] = useState<number[]>([]);
-  const [starting, setStarting] = useState<number>(250);
+  // Keep a rolling history of totalEventsConsumed for the line chart
+  const [totalHistory, setTotalHistory] = useState<number[]>([]);
+  const prevTotal = useRef<number>(0);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setStarting((prevStarting) => {
-        // Smaller range → smoother changes
-        const change = Math.floor(Math.random() * 40) + 10; // 10–50
-        const direction = Math.random() < 0.45 ? -1 : 1; // 45% chance of going down
-        const increment = direction * change;
-
-        const nextValue = prevStarting + increment;
-        setUData((prevData) => {
-          if (prevData.length >= 100) {
-            clearInterval(interval); // stop adding points
-            return prevData;
-          }
-          return [...prevData, nextValue];
-        });
-        return nextValue;
+    if (!metrics || metrics.error) return;
+    const total = metrics.totalEventsConsumed;
+    if (total !== prevTotal.current) {
+      prevTotal.current = total;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTotalHistory((prev) => {
+        const next = [...prev, total];
+        return next.length > 50 ? next.slice(-50) : next; // keep last 50 points
       });
-    }, 100);
+    }
+  }, [metrics]);
 
-    return () => clearInterval(interval);
-  }, []);
+  const xData = totalHistory.map((_, i) => i + 1);
+  const partitionData = metrics?.partitions ?? [];
 
   return (
     <Box className="individual-consumer-component">
-      {consumerName}
+      <Box sx={{ marginBottom: "8px" }}>{consumerName}</Box>
 
-      <Box className="consumer-chart-area">
-        <LineChart
-          xAxis={[{ data: [1, 2, 3, 5, 8, 10], label: "Time" }]}
-          series={[{ data: uData, color: "white", showMark: false }]}
-          yAxis={[{ label: "Events Handled" }]}
-          height={280}
-          sx={{
+      {/* Total events consumed over time */}
+      <LineChart
+        xAxis={[{ data: xData.length > 0 ? xData : [0], label: "Time" }]}
+        series={[
+          {
+            data: totalHistory.length > 0 ? totalHistory : [0],
             color: "white",
-            padding: 0,
-            // Style axis lines
-            [`& .${axisClasses.line}`]: {
-              stroke: "white",
-            },
-            // Style axis ticks
-            [`& .${axisClasses.tick}`]: {
-              stroke: "white",
-            },
-            // Style axis tick labels (font)
-            [`& .${axisClasses.tickLabel}`]: {
-              fill: "white",
-            },
-            // Ensure the background is dark for contrast if not already
-            // This is a common practice when making elements white
-            // A full background change might be done at a higher level (e.g., in main.css or theme)
-            // but for a quick demo, we can set a dark background for the chart itself.
-            ".MuiChartsLegend-root": {
-              fill: "white", // If there's a legend, make its text white
-            },
-            ".MuiChartsAxis-label": {
-              fill: "white", // If axis labels are present
-            },
-            backgroundColor: "#303030", // A dark background to make white visible
-            borderRadius: "8px",
-          }}
-        />
-      </Box>
+            showMark: false,
+            label: "Total",
+          },
+        ]}
+        yAxis={[{ label: "Total Events" }]}
+        height={160}
+        sx={chartSx}
+      />
+
+      {/* Per partition breakdown */}
+      {partitionData.length > 0 && (
+        <Box sx={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+          {partitionData.map((p) => (
+            <Box
+              key={p.partition}
+              sx={{
+                flex: 1,
+                background: "#1e1e1e",
+                border: "1px solid #333",
+                borderRadius: "4px",
+                padding: "6px",
+                fontSize: "10px",
+                color: "azure",
+              }}
+            >
+              <Box>P{p.partition}</Box>
+              <Box>offset: {p.offset}</Box>
+              <Box>consumed: {p.eventsConsumed}</Box>
+            </Box>
+          ))}
+        </Box>
+      )}
     </Box>
   );
 };
 
+// ---
+
+const chartSx = {
+  color: "white",
+  padding: 0,
+  [`& .${axisClasses.line}`]: { stroke: "white" },
+  [`& .${axisClasses.tick}`]: { stroke: "white" },
+  [`& .${axisClasses.tickLabel}`]: { fill: "white" },
+  ".MuiChartsLegend-root": { fill: "white" },
+  ".MuiChartsAxis-label": { fill: "white" },
+  backgroundColor: "#303030",
+  borderRadius: "8px",
+};
+
+// ---
+
 const CustomButton = ({
   buttonName,
   onClick,
-  icon,
+  disabled = false,
 }: {
   buttonName: string;
   onClick: () => any;
-  icon?: any;
+  disabled: boolean;
 }) => {
   return (
-    <Box className="custom-button" onClick={onClick}>
+    <Box
+      className={`custom-button ${disabled ? "custom-button-disabled" : ""}`}
+      onClick={disabled ? undefined : onClick}
+    >
       {buttonName}
     </Box>
   );
 };
 
-const ProducerConfig = () => {
-  const [partitions, setPartitions] = useState<number>(3);
-  const addPartition = () => {
-    setPartitions((prevState: number) => {
-      if (prevState < 5) return prevState + 1;
-      return prevState;
-    });
-  };
+// ---
 
-  const removePartition = () => {
-    setPartitions((prevState: number) => {
-      if (prevState > 1) return prevState - 1;
-      return prevState;
-    });
+const ProducerConfig = ({
+  partitions,
+  onAdd,
+  onRemove,
+  disabled = false,
+}: {
+  partitions: number;
+  onAdd: () => void;
+  onRemove: () => void;
+  disabled?: boolean;
+}) => {
+  const handleAdd = () => {
+    if (!disabled) onAdd();
   };
-
+  const handleRemove = () => {
+    if (!disabled) onRemove();
+  };
   return (
-    <Box
-      sx={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "12px",
-      }}
-    >
-      <Box
-        sx={{
-          display: "flex",
-          gap: "4px",
-        }}
-      >
-        {Array.from({ length: partitions }).map((_, index: number) => (
+    <Box sx={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+      <Box sx={{ display: "flex", gap: "4px" }}>
+        {Array.from({ length: partitions }).map((_, index) => (
           <Box className="custom-button" key={index}>
             Partition {index + 1}
           </Box>
@@ -175,7 +363,7 @@ const ProducerConfig = () => {
             alignItems: "center",
             cursor: "pointer",
           }}
-          onClick={removePartition}
+          onClick={handleRemove}
         >
           -
         </Box>
@@ -189,7 +377,7 @@ const ProducerConfig = () => {
             alignItems: "center",
             cursor: "pointer",
           }}
-          onClick={addPartition}
+          onClick={handleAdd}
         >
           +
         </Box>

@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Box } from "@mui/material";
-import { useState } from "react";
 import "../App.css";
 
 type Component = {
@@ -8,20 +7,13 @@ type Component = {
   healthCheck: boolean;
 };
 
-const HealthCheckBox = () => {
-  const [componentsList, setComponentsList] = useState<Component[]>([
-    { component: "PAYMENTS-SERVICE-PRODUCER", healthCheck: false },
-    { component: "MINI-KAFKA-BROKER", healthCheck: false },
-    { component: "ORDERS-SERVICE-CONSUMER", healthCheck: true },
-    { component: "NOTIFICATIONS-SERVICE-CONSUMER", healthCheck: false },
-    { component: "DATA-ANALYTICS-SERVICE-CONSUMER", healthCheck: false },
-    { component: "EVENTS-AGGREGATOR-SERVICE", healthCheck: false },
-  ]);
+const HealthCheckBox = ({ componentsList }: { componentsList: Component[] }) => {
   return (
     <Box className="health-check-component">
       <span>Health Check</span>
       {componentsList.map((component: Component) => (
         <Box
+          key={component.component}
           sx={{
             display: "flex",
             alignItems: "center",
@@ -33,7 +25,7 @@ const HealthCheckBox = () => {
             className={
               component.healthCheck ? "health-check-pass" : "health-check-fail"
             }
-          ></Box>
+          />
           <Box>{component.component}</Box>
         </Box>
       ))}
